@@ -86,7 +86,7 @@ class parse extends Command
                                 $dups[$dupFailkey] [] = $row[$dupFailkey];
                             }
                         } else {
-                            $newRows->add($row);
+                            $newRows[$row['id']] = $row;
                             foreach ($this->uniqueKeys as $key) { // fill unique indexes
                                 $uniques[$key][] = $row[$key];
                             }
@@ -100,6 +100,7 @@ class parse extends Command
             }
             fclose($handle);
 
+            $newRows = collect($newRows);
             foreach ($dups as $key => $vals) {
                 $newRows = $newRows->whereNotIn($key, $vals);
             }
@@ -116,21 +117,26 @@ class parse extends Command
             $oldTrashedRowsQuery = User::onlyTrashed();
             $oldActiveIds = $oldActiveRowsQuery->pluck('id', 'id')->toArray();
             $oldTrashedIds = $oldTrashedRowsQuery->pluck('id', 'id')->toArray();
-            $update = $newIds->intersect($oldActiveIds);
-            $restore = array_intersect($newRows, $oldTrashedIds);
-            $delete = array_diff($newKeys, $oldActiveIds);
-            $deleted = $oldActiveRowsQuery->whereIn('id', $delete)->delete();
-            $restored = $oldTrashedRowsQuery->whereIn('id', $restore)->update(['deleted_at' => null]);
-            $oldActiveRows = $oldActiveRowsQuery->pluck('id');
+            $updateIds = $newIds->intersect($oldActiveIds)->all();
+            $update = $newRows->intersectByKeys($oldActiveIds)->all();
+            $restoreIds = $newIds->intersect($oldTrashedIds);
+            $deleteIds = $newIds->diff($oldActiveIds);
+            $deleted = (clone $oldActiveRowsQuery)->whereIn('id', $deleteIds)->delete();
+            $restored = $oldTrashedRowsQuery->whereIn('id', $restoreIds)->update(['deleted_at' => null]);
+            $updated = $oldActiveRowsQuery->whereIn('id', $updateIds)->forceDelete();
+            $updated = User::insert($update);
 
             $fp = fopen('report.csv', 'w');
 
-            foreach ($list as $fields) {
-                fputcsv($fp, $fields);
+            foreach (['failed'] as $type) {
+                fputcsv($fp, ['', $type]);
+                foreach ($report[$type] as $lineNum => $errors) {
+                    foreach ($errors as $error)
+                        fputcsv($fp, [$lineNum, $error]);
+                }
             }
 
-            fclose($fp);
-            return (int) !User::insert($newRows);
+            return (int)!$updated;
         } else {
             throw new FileNotFoundException('no file: test_data.csv');
         }
