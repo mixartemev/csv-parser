@@ -92,8 +92,7 @@ class parse extends Command
                             }
                         }
                     } else { // file reject
-                        $lineNum = count($newRows) + 1;
-                        throw new UnreadableFileException("String {$lineNum} is not parsed");
+                        throw new UnreadableFileException("String {$line} is not parsed");
                     }
                 }
                 $line++;
@@ -124,17 +123,26 @@ class parse extends Command
             $deleted = (clone $oldActiveRowsQuery)->whereIn('id', $deleteIds)->delete();
             $restored = $oldTrashedRowsQuery->whereIn('id', $restoreIds)->update(['deleted_at' => null]);
             $updated = $oldActiveRowsQuery->whereIn('id', $updateIds)->forceDelete();
-            $updated = User::insert($update);
+            $updated = User::insert($newRows->all());
 
             $fp = fopen('report.csv', 'w');
 
-            foreach (['failed'] as $type) {
+            foreach (['failed'/*, 'added', 'updated', 'restored', 'removed'*/] as $type) {
                 fputcsv($fp, ['', $type]);
                 foreach ($report[$type] as $lineNum => $errors) {
                     foreach ($errors as $error)
                         fputcsv($fp, [$lineNum, $error]);
                 }
             }
+            $summary = [
+                'passed' => $line - 1,
+                'failed' => $line - 1 - $newIds->count(),
+                'added' => $newIds->count() - count($updateIds),
+                'updated' => count($updateIds),
+                'restored' => $restored,
+                'removed' => $deleted
+            ];
+            $this->table(array_keys($summary), [$summary]);
 
             return (int)!$updated;
         } else {

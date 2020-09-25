@@ -81,6 +81,15 @@ return [
             ],
         ],
 
+        'stdout' => [
+            'driver' => 'monolog',
+            'handler' => StreamHandler::class,
+            'formatter' => Monolog\Formatter\LineFormatter::class,
+            'with' => [
+                'stream' => 'php://stdout',
+            ],
+        ],
+
         'syslog' => [
             'driver' => 'syslog',
             'level' => 'debug',
